@@ -1,0 +1,345 @@
+diff --git a/projects.yaml b/projects.yaml
+index 4a465ee6..be54c0de 100644
+--- a/projects.yaml
++++ b/projects.yaml
+@@ -200,10 +200,11 @@ projects:
+         - records/hic_hal/stm32f103xb.yaml
+         - records/board/stm32f103xb_bl.yaml
+     stm32f103xb_if:
++        # HID-only CMSIS-DAP for STM32F103: no BULK/WinUSB v2 so HID keeps EP1 IN/OUT.
++        # CDC + MSC + WebUSB retained from module_if; usb-bulk.yaml intentionally omitted.
+         - *module_if
+         - *module_hic_stm32f103xb
+         - records/family/all_family.yaml
+-        - records/usb/usb-bulk.yaml
+ 
+     # Other projects
+     k20dx_ep_agora_if:
+diff --git a/records/tools/gcc_arm.yaml b/records/tools/gcc_arm.yaml
+index 3ca532e6..367027e0 100644
+--- a/records/tools/gcc_arm.yaml
++++ b/records/tools/gcc_arm.yaml
+@@ -27,7 +27,7 @@ tool_specific:
+                 - --specs=nano.specs
+                 - --specs=nosys.specs
+                 - -Wl,-check-sections
+-                - -Wl,-fatal-warnings
++                - # -Wl,-fatal-warnings  # disabled: newlib stub warnings on modern binutils
+                 - -Wl,--gc-sections
+                 - -Wl,--no-wchar-size-warning
+                 - -Wl,--print-memory-usage
+diff --git a/source/hic_hal/stm32/stm32f103xb/DAP_config.h b/source/hic_hal/stm32/stm32f103xb/DAP_config.h
+index 34013e77..bc1810bb 100644
+--- a/source/hic_hal/stm32/stm32f103xb/DAP_config.h
++++ b/source/hic_hal/stm32/stm32f103xb/DAP_config.h
+@@ -257,8 +257,8 @@ __STATIC_INLINE void PORT_SWD_SETUP(void)
+     // Set SWDIO HIGH
+     pin_out_init(SWDIO_OUT_PIN_PORT, SWDIO_OUT_PIN_Bit);
+     SWDIO_OUT_PIN_PORT->BSRR = SWDIO_OUT_PIN;
+-
+-    pin_in_init(SWDIO_IN_PIN_PORT, SWDIO_IN_PIN_Bit, 1);
++    /* Blue Pill: SWDIO_IN == SWDIO_OUT (PA13). Do not re-init as input here,
++       or SWD sequences would only be driven through the weak pull resistor. */
+     // Set RESET HIGH
+     pin_out_od_init(nRESET_PIN_PORT, nRESET_PIN_Bit);//TODO - fix reset logic
+     nRESET_PIN_PORT->BSRR = nRESET_PIN;
+@@ -362,8 +362,8 @@ called prior \ref PIN_SWDIO_IN function calls.
+ */
+ __STATIC_FORCEINLINE void PIN_SWDIO_OUT_DISABLE(void)
+ {
+-    pin_in_init(SWDIO_OUT_PIN_PORT, SWDIO_OUT_PIN_Bit, 0);
+-    SWDIO_OUT_PIN_PORT->BSRR = SWDIO_OUT_PIN;
++    /* Shared PA13: must be digital input (pull-up), not analog, else IDR reads 0 */
++    pin_in_init(SWDIO_OUT_PIN_PORT, SWDIO_OUT_PIN_Bit, 1);
+ }
+ 
+ 
+@@ -527,14 +527,18 @@ __STATIC_INLINE void DAP_SETUP(void)
+     __HAL_RCC_GPIOB_CLK_ENABLE();
+     __HAL_RCC_GPIOC_CLK_ENABLE();
+     __HAL_RCC_GPIOD_CLK_ENABLE();
++    /* Ensure AFIO clock + full SWJ disable before driving PA13/PA14 as GPIO
++     * (gpio_init already does this; repeat here so DAP path is self-contained). */
++    __HAL_RCC_AFIO_CLK_ENABLE();
++    __HAL_AFIO_REMAP_SWJ_DISABLE();
+     /* Configure I/O pin SWCLK */
+     pin_out_init(SWCLK_TCK_PIN_PORT, SWCLK_TCK_PIN_Bit);
+     SWCLK_TCK_PIN_PORT->BSRR = SWCLK_TCK_PIN;
+ 
+     pin_out_init(SWDIO_OUT_PIN_PORT, SWDIO_OUT_PIN_Bit);
+     SWDIO_OUT_PIN_PORT->BSRR = SWDIO_OUT_PIN;
+-
+-    pin_in_init(SWDIO_IN_PIN_PORT, SWDIO_IN_PIN_Bit, 1);
++    /* Blue Pill: SWDIO_IN == SWDIO_OUT (PA13). Do not re-init as input here,
++       or SWD sequences would only be driven through the weak pull resistor. */
+ 
+     pin_out_od_init(nRESET_PIN_PORT, nRESET_PIN_Bit);
+     nRESET_PIN_PORT->BSRR = nRESET_PIN;
+diff --git a/source/hic_hal/stm32/stm32f103xb/IO_Config.h b/source/hic_hal/stm32/stm32f103xb/IO_Config.h
+index de9a4667..ee84ac44 100644
+--- a/source/hic_hal/stm32/stm32f103xb/IO_Config.h
++++ b/source/hic_hal/stm32/stm32f103xb/IO_Config.h
+@@ -1,6 +1,13 @@
+ /**
+  * @file    IO_Config.h
+- * @brief
++ * @brief   Blue Pill — PA13/PA14 SWD probe + VCOM on PB6/PB7
++ *
++ * External CMSIS-DAP SWD probe pins use the Blue Pill's own SWD header:
++ *   PA14 = SWCLK, PA13 = SWDIO (bidirectional single-wire).
++ * On-chip SWJ must be fully disabled (see gpio.c) so these pins become GPIO.
++ *
++ * VCOM uses USART1 remapped: PB6=TX, PB7=RX (see uart.c).
++ * nRESET on PB8 (PB6 is VCOM TX).
+  *
+  * DAPLink Interface Firmware
+  * Copyright (c) 2009-2016, ARM Limited, All Rights Reserved
+@@ -19,6 +26,7 @@
+  * limitations under the License.
+  */
+ 
++
+ #ifndef __IO_CONFIG_H__
+ #define __IO_CONFIG_H__
+ 
+@@ -28,59 +36,65 @@
+ 
+ COMPILER_ASSERT(DAPLINK_HIC_ID == DAPLINK_HIC_ID_STM32F103XB);
+ 
+-//USB control pin
++/* Blue Pill USB soft-connect via PA12 (D+).
++ * Board has a hard 1k5 pull-up on D+; official PA15 soft-connect is unwired and a no-op.
++ * Emulate disconnect by driving PA12 low (overrides 1k5), then release to floating input
++ * so the hard pull-up re-attaches after the USB stack is ready (host re-enumeration).
++ * PA15 is left unused (do not drive). Register-level macros — no HAL dependency. */
+ #define USB_CONNECT_PORT_ENABLE()    __HAL_RCC_GPIOA_CLK_ENABLE()
+ #define USB_CONNECT_PORT_DISABLE()   __HAL_RCC_GPIOA_CLK_DISABLE()
+ #define USB_CONNECT_PORT             GPIOA
+-#define USB_CONNECT_PIN              GPIO_PIN_15
+-#define USB_CONNECT_ON()             (USB_CONNECT_PORT->BSRR = USB_CONNECT_PIN)
+-#define USB_CONNECT_OFF()            (USB_CONNECT_PORT->BRR  = USB_CONNECT_PIN)
+-
+-//Connected LED
+-#define CONNECTED_LED_PORT           GPIOB
+-#define CONNECTED_LED_PIN            GPIO_PIN_6
+-#define CONNECTED_LED_PIN_Bit        6
+-
+-//When bootloader, disable the target port(not used)
++#define USB_CONNECT_PIN              GPIO_PIN_12
++/* CNF=01 MODE=00 → floating input (USB peripheral / hard 1k5 take over) */
++#define USB_CONNECT_ON()             do {         GPIOA->CRH = (GPIOA->CRH & ~(0xFul << 16)) | (0x4ul << 16);     } while (0)
++/* CNF=00 MODE=10 → GP push-pull 2 MHz output, drive DP low */
++#define USB_CONNECT_OFF()            do {         GPIOA->BRR = (1u << 12);         GPIOA->CRH = (GPIOA->CRH & ~(0xFul << 16)) | (0x2ul << 16);         GPIOA->BRR = (1u << 12);     } while (0)
++
++/* Blue Pill onboard LED PC13 (active low) */
++#define CONNECTED_LED_PORT           GPIOC
++#define CONNECTED_LED_PIN            GPIO_PIN_13
++#define CONNECTED_LED_PIN_Bit        13
++
++/* Unused on Blue Pill — keep a free header pin driven low (harmless if open) */
+ #define POWER_EN_PIN_PORT            GPIOB
+ #define POWER_EN_PIN                 GPIO_PIN_15
+ #define POWER_EN_Bit                 15
+ 
+-// nRESET OUT Pin
++/* Target nRESET — PB8 (PB6=VCOM TX) */
+ #define nRESET_PIN_PORT              GPIOB
+-#define nRESET_PIN                   GPIO_PIN_0
+-#define nRESET_PIN_Bit               0
+-
+-//SWD
+-#define SWCLK_TCK_PIN_PORT           GPIOB
+-#define SWCLK_TCK_PIN                GPIO_PIN_13
+-#define SWCLK_TCK_PIN_Bit            13
+-
+-#define SWDIO_OUT_PIN_PORT           GPIOB
+-#define SWDIO_OUT_PIN                GPIO_PIN_14
+-#define SWDIO_OUT_PIN_Bit            14
+-
+-#define SWDIO_IN_PIN_PORT            GPIOB
+-#define SWDIO_IN_PIN                 GPIO_PIN_12
+-#define SWDIO_IN_PIN_Bit             12
+-
+-//LEDs
+-//USB status LED
+-#define RUNNING_LED_PORT             GPIOA
+-#define RUNNING_LED_PIN              GPIO_PIN_9
+-#define RUNNING_LED_Bit              9
+-
+-#define PIN_HID_LED_PORT             GPIOA
+-#define PIN_HID_LED                  GPIO_PIN_9
+-#define PIN_HID_LED_Bit              9
+-
+-#define PIN_CDC_LED_PORT             GPIOA
+-#define PIN_CDC_LED                  GPIO_PIN_9
+-#define PIN_CDC_LED_Bit              9
+-
+-#define PIN_MSC_LED_PORT             GPIOA
+-#define PIN_MSC_LED                  GPIO_PIN_9
+-#define PIN_MSC_LED_Bit              9
+-
++#define nRESET_PIN                   GPIO_PIN_8
++#define nRESET_PIN_Bit               8
++
++/* SWD to target — Blue Pill own SWD header (PA13/PA14)
++ * SWDIO_OUT and SWDIO_IN share PA13 (bidirectional single-wire).
++ * Requires AFIO SWJ fully disabled before driving these as GPIO. */
++#define SWCLK_TCK_PIN_PORT           GPIOA
++#define SWCLK_TCK_PIN                GPIO_PIN_14
++#define SWCLK_TCK_PIN_Bit            14
++
++#define SWDIO_OUT_PIN_PORT           GPIOA
++#define SWDIO_OUT_PIN                GPIO_PIN_13
++#define SWDIO_OUT_PIN_Bit            13
++
++#define SWDIO_IN_PIN_PORT            GPIOA
++#define SWDIO_IN_PIN                 GPIO_PIN_13
++#define SWDIO_IN_PIN_Bit             13
++
++/* Status LEDs all map to PC13 (only one LED on Blue Pill) */
++#define RUNNING_LED_PORT             GPIOC
++#define RUNNING_LED_PIN              GPIO_PIN_13
++#define RUNNING_LED_Bit              13
++
++#define PIN_HID_LED_PORT             GPIOC
++#define PIN_HID_LED                  GPIO_PIN_13
++#define PIN_HID_LED_Bit              13
++
++#define PIN_CDC_LED_PORT             GPIOC
++#define PIN_CDC_LED                  GPIO_PIN_13
++#define PIN_CDC_LED_Bit              13
++
++#define PIN_MSC_LED_PORT             GPIOC
++#define PIN_MSC_LED                  GPIO_PIN_13
++#define PIN_MSC_LED_Bit              13
+ 
+ #endif
+diff --git a/source/hic_hal/stm32/stm32f103xb/gpio.c b/source/hic_hal/stm32/stm32f103xb/gpio.c
+index 376cf358..2db53fd0 100644
+--- a/source/hic_hal/stm32/stm32f103xb/gpio.c
++++ b/source/hic_hal/stm32/stm32f103xb/gpio.c
+@@ -120,18 +120,16 @@ void gpio_init(void)
+     __HAL_RCC_GPIOB_CLK_ENABLE();
+     __HAL_RCC_GPIOC_CLK_ENABLE();
+     __HAL_RCC_GPIOD_CLK_ENABLE();
+-    // Enable USB connect pin
++    // Enable USB connect pin (Blue Pill: PA12/DP yank-low; see IO_Config.h)
+     __HAL_RCC_AFIO_CLK_ENABLE();
+-    // Disable JTAG to free pins for other uses
+-    // Note - SWD is still enabled
+-    __HAL_AFIO_REMAP_SWJ_NOJTAG();
++    /* Blue Pill PA13/PA14 probe: fully disable on-chip JTAG+SWD (SWJ_CFG=0b100)
++     * so PA13/PA14 become ordinary GPIO for the external CMSIS-DAP SWD lines.
++     * After this, WCH-Link can only attach via connect-under-reset or BOOT0 ISP. */
++    __HAL_AFIO_REMAP_SWJ_DISABLE();
+ 
+     USB_CONNECT_PORT_ENABLE();
++    /* Hold DP low until USBD_Connect(TRUE) — prevents early host enum failure */
+     USB_CONNECT_OFF();
+-    GPIO_InitStructure.Pin = USB_CONNECT_PIN;
+-    GPIO_InitStructure.Speed = GPIO_SPEED_FREQ_HIGH;
+-    GPIO_InitStructure.Mode = GPIO_MODE_OUTPUT_PP;
+-    HAL_GPIO_Init(USB_CONNECT_PORT, &GPIO_InitStructure);
+     // configure LEDs
+     HAL_GPIO_WritePin(RUNNING_LED_PORT, RUNNING_LED_PIN, GPIO_PIN_SET);
+     GPIO_InitStructure.Pin = RUNNING_LED_PIN;
+@@ -172,12 +170,8 @@ void gpio_init(void)
+     GPIO_InitStructure.Mode = GPIO_MODE_OUTPUT_PP;
+     HAL_GPIO_Init(POWER_EN_PIN_PORT, &GPIO_InitStructure);
+ 
+-    // Setup the 8MHz MCO
+-    GPIO_InitStructure.Pin = GPIO_PIN_8;
+-    GPIO_InitStructure.Speed = GPIO_SPEED_FREQ_HIGH;
+-    GPIO_InitStructure.Mode = GPIO_MODE_AF_PP;
+-    HAL_GPIO_Init(GPIOA, &GPIO_InitStructure);
+-    output_clock_enable();
++    // Blue Pill: skip 8 MHz MCO on PA8 (not wired; leave pin free)
++    // output_clock_enable();
+ 
+     // Let the voltage rails stabilize.  This is especailly important
+     // during software resets, since the target's 3.3v rail can take
+diff --git a/source/hic_hal/stm32/stm32f103xb/uart.c b/source/hic_hal/stm32/stm32f103xb/uart.c
+index d982be84..7386b6c3 100644
+--- a/source/hic_hal/stm32/stm32f103xb/uart.c
++++ b/source/hic_hal/stm32/stm32f103xb/uart.c
+@@ -1,6 +1,6 @@
+ /**
+  * @file    uart.c
+- * @brief
++ * @brief   Blue Pill VCOM — USART1 remapped to PB6 (TX) / PB7 (RX)
+  *
+  * DAPLink Interface Firmware
+  * Copyright (c) 2009-2016, ARM Limited, All Rights Reserved
+@@ -28,22 +28,27 @@
+ #include "circ_buf.h"
+ #include "IO_Config.h"
+ 
+-// For usart
+-#define CDC_UART                     USART2
+-#define CDC_UART_ENABLE()            __HAL_RCC_USART2_CLK_ENABLE()
+-#define CDC_UART_DISABLE()           __HAL_RCC_USART2_CLK_DISABLE()
+-#define CDC_UART_IRQn                USART2_IRQn
+-#define CDC_UART_IRQn_Handler        USART2_IRQHandler
++/* VCOM: USART1 remapped — PB6=TX, PB7=RX (AFIO USART1_REMAP) */
++#define CDC_UART                     USART1
++#define CDC_UART_ENABLE()            __HAL_RCC_USART1_CLK_ENABLE()
++#define CDC_UART_DISABLE()           __HAL_RCC_USART1_CLK_DISABLE()
++#define CDC_UART_IRQn                USART1_IRQn
++#define CDC_UART_IRQn_Handler        USART1_IRQHandler
+ 
+-#define UART_PINS_PORT_ENABLE()      __HAL_RCC_GPIOA_CLK_ENABLE()
+-#define UART_PINS_PORT_DISABLE()     __HAL_RCC_GPIOA_CLK_DISABLE()
++#define UART_PINS_PORT_ENABLE()      do { \
++        __HAL_RCC_GPIOB_CLK_ENABLE(); \
++        __HAL_RCC_AFIO_CLK_ENABLE(); \
++        __HAL_AFIO_REMAP_USART1_ENABLE(); \
++    } while (0)
++#define UART_PINS_PORT_DISABLE()     __HAL_RCC_GPIOB_CLK_DISABLE()
+ 
+-#define UART_TX_PORT                 GPIOA
+-#define UART_TX_PIN                  GPIO_PIN_2
++#define UART_TX_PORT                 GPIOB
++#define UART_TX_PIN                  GPIO_PIN_6
+ 
+-#define UART_RX_PORT                 GPIOA
+-#define UART_RX_PIN                  GPIO_PIN_3
++#define UART_RX_PORT                 GPIOB
++#define UART_RX_PIN                  GPIO_PIN_7
+ 
++/* Flow control unused (HwFlowCtl=NONE). Keep harmless stubs on free PA0/PA1. */
+ #define UART_CTS_PORT                GPIOA
+ #define UART_CTS_PIN                 GPIO_PIN_0
+ 
+@@ -87,6 +92,7 @@ int32_t uart_initialize(void)
+ 
+     CDC_UART_ENABLE();
+     UART_PINS_PORT_ENABLE();
++    __HAL_RCC_GPIOA_CLK_ENABLE();
+ 
+     //TX pin
+     GPIO_InitStructure.Pin = UART_TX_PIN;
+diff --git a/source/hic_hal/stm32/stm32f103xb/usb_config.c b/source/hic_hal/stm32/stm32f103xb/usb_config.c
+index 354b57ae..a5dd9207 100644
+--- a/source/hic_hal/stm32/stm32f103xb/usb_config.c
++++ b/source/hic_hal/stm32/stm32f103xb/usb_config.c
+@@ -90,9 +90,9 @@
+ //     </e>
+ //   </h>
+ #define USBD_STRDESC_LANGID         0x0409
+-#define USBD_STRDESC_MAN            L"Arm"
++#define USBD_STRDESC_MAN            L"tekrit"
+ #ifndef USB_PROD_STR
+-#define USBD_STRDESC_PROD           L"DAPLink CMSIS-DAP"
++#define USBD_STRDESC_PROD           L"BluePill CMSIS-DAP v1"
+ #else
+ #define _TOWIDE(x)                   L ## #x
+ #define TOWIDE(x)                   _TOWIDE(x)
+@@ -173,7 +173,7 @@
+ #define USBD_HID_HS_ENABLE          0
+ #define USBD_HID_HS_WMAXPACKETSIZE  64
+ #define USBD_HID_HS_BINTERVAL       6
+-#define USBD_HID_STRDESC            L"CMSIS-DAP v1"
++#define USBD_HID_STRDESC            L"BluePill CMSIS-DAP v1"
+ #define USBD_WEBUSB_STRDESC         L"WebUSB: CMSIS-DAP"
+ #define USBD_HID_INREPORT_NUM       1
+ #define USBD_HID_OUTREPORT_NUM      1

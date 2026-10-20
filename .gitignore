@@ -1,0 +1,5 @@
+DAPLink/venv/
+DAPLink/projectfiles/
+*.o
+*.elf
+__pycache__/
