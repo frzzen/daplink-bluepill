@@ -17,6 +17,17 @@
 
 pyOCD 列表：`Tekrit BluePill CMSIS-DAP v1`
 
+
+## 发布镜像（三件套）
+
+| 镜像 | 适用 | 用途 |
+|---|---|---|
+| `daplink_bluepill_full_128k_hid_pa13pa14.*` | STM32F103**CB**（128 KiB） | 整片烧录：BL + 无 MSC 的 IF |
+| `daplink_bluepill_if_only_64k.*` | STM32F103**C8**（64 KiB） | 仅 IF，无 BL、无 MSC（`scripts/build_if_only.sh`） |
+| `daplink_bluepill_if_update_for_bl.*` | 已有本仓库 BL 的 CB | 拖到 **BL U 盘** 升级 IF（链接 `0x0800C000`，带 CRC） |
+
+两款正式运行固件都**不含 MSC**（不做目标盘）。BL 自带的拖盘只用来更新 IF；请用 `if_update_for_bl`，不要拖 `if_only_64k`（地址不同）。
+
 ## 目录
 
 ```

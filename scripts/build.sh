@@ -38,6 +38,10 @@ make -C projectfiles/make_gcc_arm/stm32f103xb_if -j"$(nproc)" all
 mkdir -p "$OUT"
 cp projectfiles/make_gcc_arm/stm32f103xb_bl/build/stm32f103xb_bl_crc.bin "$OUT/bl.bin"
 cp projectfiles/make_gcc_arm/stm32f103xb_if/build/stm32f103xb_if_crc.bin "$OUT/if.bin"
+# IF CRC image for BL MSC drag-drop upgrade (link @ 0x0800C000). Same bytes as IF in full_128k.
+cp "$OUT/if.bin" "$OUT/daplink_bluepill_if_update_for_bl.bin"
+arm-none-eabi-objcopy -I binary -O ihex --change-addresses=0x0800C000 \
+  "$OUT/daplink_bluepill_if_update_for_bl.bin" "$OUT/daplink_bluepill_if_update_for_bl.hex"
 OUT="$OUT" python3 - <<'PY'
 import os
 from pathlib import Path
@@ -49,8 +53,12 @@ img[0:len(bl)] = bl
 img[0xC000:0xC000+len(iff)] = iff
 (out/'daplink_bluepill_full_128k_hid_pa13pa14.bin').write_bytes(img)
 print('OK', len(bl), len(iff), '->', out/'daplink_bluepill_full_128k_hid_pa13pa14.bin')
+print('IF update for BL drag-drop:', out/'daplink_bluepill_if_update_for_bl.bin', len(iff), 'B')
 PY
 arm-none-eabi-objcopy -I binary -O ihex --change-addresses=0x08000000 \
   "$OUT/daplink_bluepill_full_128k_hid_pa13pa14.bin" "$OUT/daplink_bluepill_full_128k_hid_pa13pa14.hex"
-(cd "$OUT" && sha256sum daplink_bluepill_full_128k_hid_pa13pa14.bin daplink_bluepill_full_128k_hid_pa13pa14.hex > SHA256SUMS)
+(cd "$OUT" && sha256sum \
+  daplink_bluepill_full_128k_hid_pa13pa14.bin daplink_bluepill_full_128k_hid_pa13pa14.hex \
+  daplink_bluepill_if_update_for_bl.bin daplink_bluepill_if_update_for_bl.hex \
+  > SHA256SUMS)
 echo "Artifacts in $OUT"

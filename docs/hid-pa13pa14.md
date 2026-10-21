@@ -56,3 +56,7 @@ OUT=bluepill/firmware-hid-pa13pa14 ./bluepill/rebuild.sh
 - `projects.yaml` — 去掉 `usb-bulk.yaml`（HID-only）
 - `IO_Config.h` / `DAP_config.h` / `gpio.c` — PA13/PA14 SWD，全关 SWJ
 - `uart.c` — USART1 remap PB6/PB7；nRESET=PB8
+
+## BL 拖盘升级 IF
+
+已烧过带 BL 的 128 KiB 整片时，可把 `daplink_bluepill_if_update_for_bl.bin`（或 `.hex`）拖到 BL 枚举的 U 盘里更新 Interface。该镜像与整片中的 IF 相同，链接在 `0x0800C000`，末尾含 DAPLink CRC。不要用 `if_only_64k`（那是 C8 直烧、起点 `0x08000000`）。
