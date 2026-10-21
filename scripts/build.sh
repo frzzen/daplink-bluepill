@@ -27,6 +27,11 @@ progen generate -t make_gcc_arm -p stm32f103xb_if
 sed -i 's/-Wl,-fatal-warnings//g' \
   projectfiles/make_gcc_arm/stm32f103xb_bl/Makefile \
   projectfiles/make_gcc_arm/stm32f103xb_if/Makefile || true
+# projectfiles/ is kept across clean; force fresh link scripts after addr layout changes.
+make -C projectfiles/make_gcc_arm/stm32f103xb_bl clean || true
+make -C projectfiles/make_gcc_arm/stm32f103xb_if clean || true
+rm -f projectfiles/make_gcc_arm/stm32f103xb_bl/build/*.generated.ld \
+      projectfiles/make_gcc_arm/stm32f103xb_if/build/*.generated.ld
 make -C projectfiles/make_gcc_arm/stm32f103xb_bl -j"$(nproc)" all
 make -C projectfiles/make_gcc_arm/stm32f103xb_if -j"$(nproc)" all
 

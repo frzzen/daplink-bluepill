@@ -1,14 +1,37 @@
 diff --git a/projects.yaml b/projects.yaml
-index 4a465ee6..be54c0de 100644
+index 4a465ee6..854bd2fb 100644
 --- a/projects.yaml
 +++ b/projects.yaml
-@@ -200,10 +200,11 @@ projects:
+@@ -37,6 +37,21 @@ module:
+         - records/daplink/interface.yaml
+         - records/daplink/target_family.yaml
+         - records/daplink/target_board.yaml
++    # BluePill HID IF: module_if without usb-msc (keep drag-n-drop sources; IF headers need them)
++    if_hid_no_msc: &module_if_hid_no_msc
++        - *module_tools
++        - records/usb/usb-core.yaml
++        - records/usb/usb-cdc.yaml
++        - records/usb/usb-webusb.yaml
++        - records/usb/usb-winusb.yaml
++        - records/daplink/cmsis-dap.yaml
++        - records/daplink/drag-n-drop.yaml
++        - records/daplink/usb2uart.yaml
++        - records/daplink/settings.yaml
++        - records/daplink/settings_rom.yaml
++        - records/daplink/interface.yaml
++        - records/daplink/target_family.yaml
++        - records/daplink/target_board.yaml
+     # HICs
+     hic_k20dx: &module_hic_k20dx
+         - records/rtos/rtos-cm3.yaml
+@@ -200,10 +215,11 @@ projects:
          - records/hic_hal/stm32f103xb.yaml
          - records/board/stm32f103xb_bl.yaml
      stm32f103xb_if:
+-        - *module_if
 +        # HID-only CMSIS-DAP for STM32F103: no BULK/WinUSB v2 so HID keeps EP1 IN/OUT.
-+        # CDC + MSC + WebUSB retained from module_if; usb-bulk.yaml intentionally omitted.
-         - *module_if
++        # HID IF without MSC (no target drag-drop disk); keep drag-n-drop sources for IF headers; CDC+WebUSB+HID; no usb-bulk.
++        - *module_if_hid_no_msc
          - *module_hic_stm32f103xb
          - records/family/all_family.yaml
 -        - records/usb/usb-bulk.yaml
@@ -319,7 +342,7 @@ index d982be84..7386b6c3 100644
      //TX pin
      GPIO_InitStructure.Pin = UART_TX_PIN;
 diff --git a/source/hic_hal/stm32/stm32f103xb/usb_config.c b/source/hic_hal/stm32/stm32f103xb/usb_config.c
-index 354b57ae..a5dd9207 100644
+index 354b57ae..fb8b35bd 100644
 --- a/source/hic_hal/stm32/stm32f103xb/usb_config.c
 +++ b/source/hic_hal/stm32/stm32f103xb/usb_config.c
 @@ -90,9 +90,9 @@
@@ -327,7 +350,7 @@ index 354b57ae..a5dd9207 100644
  //   </h>
  #define USBD_STRDESC_LANGID         0x0409
 -#define USBD_STRDESC_MAN            L"Arm"
-+#define USBD_STRDESC_MAN            L"tekrit"
++#define USBD_STRDESC_MAN            L"Tekrit"
  #ifndef USB_PROD_STR
 -#define USBD_STRDESC_PROD           L"DAPLink CMSIS-DAP"
 +#define USBD_STRDESC_PROD           L"BluePill CMSIS-DAP v1"

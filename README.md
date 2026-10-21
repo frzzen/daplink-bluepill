@@ -3,19 +3,19 @@
 蓝丸（STM32F103）CMSIS-DAP 探针固件。**DAPLink 源码以 Git submodule 引入**，本仓库只保留蓝丸补丁、构建脚本与发布固件。
 
 上游：[ARMmbed/DAPLink](https://github.com/ARMmbed/DAPLink)（钉在 `UPSTREAM_SHA.txt`）  
-当前发布：**[v1.0.0](https://github.com/frzzen/daplink-bluepill/releases/tag/v1.0.0)**
+当前发布：**[v1.1.0](https://github.com/frzzen/daplink-bluepill/releases/tag/v1.1.0)**
 
 ## 功能
 
 | 项 | 说明 |
 |---|---|
-| USB | Manufacturer `tekrit`，Product / HID `BluePill CMSIS-DAP v1` |
+| USB | Manufacturer `Tekrit`，Product / HID `BluePill CMSIS-DAP v1`（协议代次，非发行号） |
 | CMSIS-DAP | 仅 HID v1（无 WinUSB / Bulk） |
 | SWD | PA14 SWCLK / PA13 SWDIO（关 SWJ） |
 | nRESET | PB8 |
 | VCOM | PB6 TX / PB7 RX |
 
-pyOCD 列表：`tekrit BluePill CMSIS-DAP v1`
+pyOCD 列表：`Tekrit BluePill CMSIS-DAP v1`
 
 ## 目录
 

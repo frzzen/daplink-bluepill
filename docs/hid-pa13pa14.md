@@ -16,10 +16,10 @@
 
 - **Product string**：`BluePill CMSIS-DAP v1`（`USBD_STRDESC_PROD`）
 - **HID interface string**：`BluePill CMSIS-DAP v1`（`USBD_HID_STRDESC`；pyOCD Probe 列用此名）
-- 序列号仍为芯片 UID；Manufacturer 为 `tekrit`
+- 序列号仍为芯片 UID；Manufacturer 为 `Tekrit`
 - **CMSIS-DAP**：仅 HID v1（EP1 IN/OUT；`projects.yaml` 的 `stm32f103xb_if` **不**包含 `usb-bulk.yaml`）
 - **无 WinUSB / Bulk CMSIS-DAP v2**（F103 PMA 放不下 HID+Bulk）
-- CDC / MSC / WebUSB：保留
+- CDC / WebUSB：保留；**无 MSC**（no-target IF，不做目标盘拖放）
 
 macOS / Linux 可直接用 pyOCD、OpenOCD 走 HID，无需 WinUSB。
 

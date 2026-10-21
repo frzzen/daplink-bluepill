@@ -3,3 +3,6 @@ DAPLink/projectfiles/
 *.o
 *.elf
 __pycache__/
+firmware/bl.bin
+firmware/if.bin
+firmware/SHA256SUMS.if_only
